@@ -398,3 +398,11 @@ def remove_am_pending(spotify_track_id):
             "SELECT * FROM am_pending WHERE spotify_track_id=?", (spotify_track_id,))]
         conn.execute("DELETE FROM am_pending WHERE spotify_track_id=?", (spotify_track_id,))
         return rows
+
+
+def clear_am_none(spotify_track_id):
+    """'Apple'da yok' kararini sil. Silindiyse True."""
+    with get_db() as conn:
+        cur = conn.execute("DELETE FROM am_links WHERE spotify_track_id=? AND via='none'",
+                           (spotify_track_id,))
+        return cur.rowcount > 0

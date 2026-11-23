@@ -11,6 +11,7 @@ terimidir; hepsi bicim denetiminden gecer ve am_sync.py'ye arguman olarak gider
   sudo apple-esle ara "<sarki sanatci>"           # Apple katalog aramasi (JSON)
   sudo apple-esle onayla <spotify_id> <apple_id>  # ayni sarki say, listelere ekle
   sudo apple-esle yok <spotify_id>                # Apple'da karsiligi yok
+  sudo apple-esle geri <spotify_id>               # 'yok' kararini geri al
 """
 import os
 import re
@@ -40,6 +41,8 @@ def main(argv):
         run("--approve", rest[0], rest[1])
     if cmd == "yok" and len(rest) == 1 and SP.match(rest[0]):
         run("--reject", rest[0])
+    if cmd == "geri" and len(rest) == 1 and SP.match(rest[0]):
+        run("--unreject", rest[0])
     sys.exit(USAGE)
 
 

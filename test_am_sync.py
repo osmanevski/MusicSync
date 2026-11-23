@@ -177,6 +177,14 @@ class TestAmSync(unittest.TestCase):
         self.assertIn("sure farki", q["t1"]["reason"])
         self.assertIsNone(db.get_am_link("t1"))
 
+    def test_unreject_reopens_track(self):
+        am_sync.sync_playlist(self.am, None, self.pl, library=[])
+        am_sync.reject("t3")
+        self.assertTrue(db.clear_am_none("t3"))
+        self.assertIsNone(db.get_am_link("t3"))
+        r = am_sync.sync_playlist(self.am, None, self.pl, library=[])
+        self.assertEqual(r["pending"], 1)
+
     def test_adopts_existing_playlist_and_skips_songs_already_there(self):
         self.am.playlist_catalog_ids.return_value = {"s1"}
         lib = [{"id": "p.old", "name": "Liste", "can_edit": True}]

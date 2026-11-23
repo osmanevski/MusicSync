@@ -250,6 +250,8 @@ def main():
     ap.add_argument("--search", metavar="TERIM", help="Apple katalogunda ara, JSON yaz")
     ap.add_argument("--approve", nargs=2, metavar=("SPOTIFY_ID", "APPLE_ID"))
     ap.add_argument("--reject", metavar="SPOTIFY_ID", help="Apple'da karsiligi yok")
+    ap.add_argument("--unreject", metavar="SPOTIFY_ID",
+                    help="'yok' kararini geri al; sarki sonraki turda yeniden aranir")
     args = ap.parse_args()
 
     db.init_db()
@@ -274,6 +276,9 @@ def main():
     if args.approve:
         n = approve(amc.get_client(), args.approve[0], args.approve[1])
         print(f"onaylandi, {n} listeye eklendi")
+        return
+    if args.unreject:
+        print("geri alindi" if db.clear_am_none(args.unreject) else "yok kaydi bulunamadi")
         return
     if args.reject:
         reject(args.reject)

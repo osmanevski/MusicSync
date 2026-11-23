@@ -31,6 +31,7 @@ sudo apple-esle kuyruk                          # bekleyenler, JSON
 sudo apple-esle ara "<şarkı sanatçı>"           # Apple kataloğunda ara, JSON
 sudo apple-esle onayla <spotify_id> <apple_id>  # aynı şarkı say, listelere ekle
 sudo apple-esle yok <spotify_id>                # Apple'da karşılığı yok
+sudo apple-esle geri <spotify_id>               # 'yok' kararını geri al (sonraki gece yeniden aranır)
 ```
 
 `kuyruk` her şarkı için Spotify adı, sanatçı, süre (sn), ISRC, sebep ve en iyi 3
@@ -51,15 +52,17 @@ yayını**. Sırayla bak:
 3. **Süre**: 5 sn'ye kadar fark normal; 6–15 sn remaster/kesim farkı olabilir,
    ad ve sanatçı tam tutuyorsa onayla; 15 sn üstü genelde başka kayıt.
 4. Adaylar yetmiyorsa `ara` ile kendin ara (önce "ad sanatçı", sonra yalnız ad).
-5. Hiçbir aday tutmuyorsa: kataloğda gerçekten yoksa `yok`. Emin değilsen
-   **dokunma**, Osman'a sor.
+5. Hiçbir aday tutmuyorsa: en az iki farklı aramada (ad + sanatçı, yalnız ad)
+   o sanatçının kaydı çıkmıyorsa `yok`. Remix/edit/bağımsız yükleme için de
+   aynı. Emin değilsen **dokunma**, Osman'a sor. `yok` kalıcıdır; Osman itiraz
+   ederse `geri` ile aç.
 
 ISRC şüpheli kayıtlarda adaylar çoğu zaman yanlış şarkıdır (aynı albümden başka
 parça). Doğrusunu `ara` ile bul.
 
 ## Sınırlar
 
-- Yalnız bu dört komut. Spotify'a, YouTube'a ya da Apple'a başka yoldan yazma.
+- Yalnız bu komutlar. Spotify'a, YouTube'a ya da Apple'a başka yoldan yazma.
 - Spotify listesini değiştirme; şarkıyı Osman ekler.
 - Apple listesinden silme ve sıralama yapılamaz (Apple'ın API'si izin vermiyor).
 - Bir turda en fazla 50 onay; bitince Osman'a kısa rapor: kaç onay, kaç `yok`,
