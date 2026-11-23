@@ -35,6 +35,7 @@ import matcher
 import spotify_client as spc
 import applemusic_client as amc
 import telegram_notify
+import am_reverse
 from sync import read_watchlist
 
 AM_WATCHLIST_FILE = "am_watchlist.txt"   # yalniz Apple'a giden ek listeler (YouTube'a gitmez)
@@ -236,15 +237,47 @@ def approve(am, spotify_track_id, am_song_id):
     return n
 
 
+def rev_approve(sp, am_playlist_id, lib_id, spotify_id):
+    """Apple'da eklenen sarkinin Spotify karsiligi Osman/Ozan onayiyla: listeye ekle."""
+    row = next((r for r in db.get_rev_pending()
+                if r["am_playlist_id"] == am_playlist_id and r["lib_id"] == lib_id), None)
+    if not row:
+        return "kayit yok"
+    sp_pid = row["spotify_playlist_id"]
+    if spotify_id not in {t["id"] for t in spc.get_tracks(sp, sp_pid)}:
+        uri = [f"spotify:track:{spotify_id}"]
+        if am_reverse._float_to_top(sp_pid, row["playlist_name"]):
+            sp.playlist_add_items(sp_pid, uri, position=0)
+        else:
+            sp.playlist_add_items(sp_pid, uri)
+    if row.get("catalog_id"):
+        db.set_am_link(spotify_id, row["catalog_id"], "manual")
+    db.mark_am_synced([(spotify_id, am_playlist_id, row.get("catalog_id") or "",
+                        row["title"], row["artist"], "manual")])
+    db.remove_rev_pending(am_playlist_id, lib_id)
+    return f"Spotify'a eklendi: {row['artist']} - {row['title']} ({row['playlist_name']})"
+
+
 def reject(spotify_track_id):
     """Apple'da karsiligi yok: bir daha onerilmez, eklenmez."""
     db.set_am_link(spotify_track_id, "", "none")
     db.remove_am_pending(spotify_track_id)
 
 
-def _summary(results):
+def _summary(results, rev=()):
     changed = [r for r in results if r["added"] or r["pending"]]
-    if not changed:
+    rev = [r for r in rev if r["added"] or r["pending"] or r["removed"]]
+    rev_lines = []
+    for r in rev:
+        parts = []
+        if r["added"]:
+            parts.append(f"+{r['added']} Spotify'a eklendi")
+        if r["pending"]:
+            parts.append(f"?{r['pending']} eslesmedi")
+        if r["removed"]:
+            parts.append(f"−{r['removed']} Apple'dan silinmis, onay bekliyor")
+        rev_lines.append(f"• <b>{r['name']}</b> (Apple→Spotify): " + ", ".join(parts))
+    if not changed and not rev_lines:
         return ("<b>🍎 Spotify → Apple Music</b>\n\n"
                 f"Calisti. {len(results)} liste kontrol edildi, degisiklik yok.")
     lines = ["<b>🍎 Spotify → Apple Music</b>", ""]
@@ -255,7 +288,7 @@ def _summary(results):
         if r["pending"]:
             parts.append(f"?{r['pending']} incelemede")
         lines.append(f"• <b>{r['name']}</b>: " + ", ".join(parts))
-    return "\n".join(lines)
+    return "\n".join(lines + rev_lines)
 
 
 def main():
@@ -272,6 +305,15 @@ def main():
     ap.add_argument("--search", metavar="TERIM", help="Apple katalogunda ara, JSON yaz")
     ap.add_argument("--approve", nargs=2, metavar=("SPOTIFY_ID", "APPLE_ID"))
     ap.add_argument("--reject", metavar="SPOTIFY_ID", help="Apple'da karsiligi yok")
+    ap.add_argument("--no-reverse", action="store_true", help="Apple -> Spotify adimini atla")
+    ap.add_argument("--rev-json", action="store_true",
+                    help="Ters yon: karsiligi bulunamayanlar ve silme onayi bekleyenler (JSON)")
+    ap.add_argument("--rev-approve", nargs=3, metavar=("AM_PLAYLIST_ID", "LIB_ID", "SPOTIFY_ID"),
+                    help="Apple'da eklenen sarkinin Spotify karsiligi bu; listeye ekle")
+    ap.add_argument("--rev-skip", nargs=2, metavar=("AM_PLAYLIST_ID", "LIB_ID"),
+                    help="Bu Apple eklemesi Spotify'a gitmesin")
+    ap.add_argument("--rev-remove", type=int, metavar="ID", help="Apple'dan silineni Spotify'dan da sil")
+    ap.add_argument("--rev-keep", type=int, metavar="ID", help="Apple'dan silinen Spotify'da kalsin")
     ap.add_argument("--unreject", metavar="SPOTIFY_ID",
                     help="'yok' kararini geri al; sarki sonraki turda yeniden aranir")
     args = ap.parse_args()
@@ -285,6 +327,24 @@ def main():
         return
     if args.review:
         return _cli_review()
+    if args.rev_json:
+        print(json.dumps({"eslesmeyen": db.get_rev_pending(), "silme_onayi": db.get_rev_removed()},
+                         ensure_ascii=False, indent=1, default=str))
+        return
+    if args.rev_approve:
+        print(rev_approve(spc.get_client(), *args.rev_approve))
+        return
+    if args.rev_skip:
+        db.remove_rev_pending(*args.rev_skip)
+        print("atlandi")
+        return
+    if args.rev_remove or args.rev_keep:
+        rid = args.rev_remove or args.rev_keep
+        row = am_reverse.confirm_removal(spc.get_client(), rid, keep=bool(args.rev_keep))
+        print("kayit yok" if not row else
+              (f"Spotify'da kaldi: {row['title']}" if args.rev_keep else
+               f"Spotify'dan silindi: {row['artist']} - {row['title']} ({row['playlist_name']})"))
+        return
     if args.recent_json:
         print(json.dumps(amc.get_client().recent_played(), ensure_ascii=False))
         return
@@ -333,6 +393,9 @@ def main():
             print("Senkronlanacak liste yok.")
             return
 
+        rev = []
+        if user and not args.no_reverse:
+            rev = am_reverse.run(am, sp, targets, dry_run=args.dry_run)
         results = []
         for pl in targets:
             r = sync_playlist(am, sp, pl, library=library, dry_run=args.dry_run,
@@ -352,7 +415,7 @@ def main():
         print(f"\n[KURU] Toplam: eklenecek {tot['added']} (ISRC {tot['isrc']}, "
               f"onayli {tot['manual']}), incelemeye {tot['pending']}. Hicbir sey yazilmadi.")
     else:
-        telegram_notify.send(_summary(results))
+        telegram_notify.send(_summary(results, rev))
 
 
 def _cli_review():

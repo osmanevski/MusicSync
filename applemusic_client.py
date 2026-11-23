@@ -152,6 +152,32 @@ class Client:
                 ids.add(str(cid))
         return ids
 
+    def playlist_items(self, playlist_id):
+        """Kitaplik listesinin ogeleri, listedeki sirayla:
+        [{lib_id, catalog_id|None, title, artist, duration_sec}]"""
+        out = []
+        for t in self._paged(f"/me/library/playlists/{playlist_id}/tracks",
+                             {"limit": 100}, user=True):
+            a = t.get("attributes") or {}
+            out.append({"lib_id": str(t.get("id")),
+                        "catalog_id": (a.get("playParams") or {}).get("catalogId"),
+                        "title": a.get("name") or "", "artist": a.get("artistName") or "",
+                        "duration_sec": round((a.get("durationInMillis") or 0) / 1000)})
+        return out
+
+    def isrc_of(self, catalog_ids):
+        """{catalog_id: ISRC}"""
+        out = {}
+        ids = [i for i in dict.fromkeys(catalog_ids) if i]
+        for i in range(0, len(ids), 25):
+            d = self._req("GET", f"/catalog/{self.storefront}/songs",
+                          params={"ids": ",".join(ids[i:i + 25])})
+            for s in (d or {}).get("data") or []:
+                isrc = (s.get("attributes") or {}).get("isrc")
+                if isrc:
+                    out[str(s["id"])] = isrc.upper()
+        return out
+
     def create_playlist(self, name, description="Spotify'dan senkronize edildi"):
         data = self._req("POST", "/me/library/playlists", user=True, json={
             "attributes": {"name": name, "description": description},

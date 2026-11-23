@@ -1,6 +1,6 @@
 ---
 name: apple-music-esle
-description: "Spotify → Apple Music senkronunda ISRC ile eşleşmeyen ya da ISRC'si şüpheli şarkıları sen eşle. 'Apple kuyruğu', 'Apple eşleşmeleri', 'Apple'a geçmeyenler', haftalık/istek üzerine inceleme ve gece senkronundan sonra kullan."
+description: "Spotify ↔ Apple Music senkronunda ISRC ile eşleşmeyen ya da ISRC'si şüpheli şarkıları sen eşle. 'Apple kuyruğu', 'Apple eşleşmeleri', 'Apple'a geçmeyenler', haftalık/istek üzerine inceleme ve gece senkronundan sonra kullan."
 version: 1.0.0
 author: Osman
 license: MIT
@@ -59,6 +59,28 @@ yayını**. Sırayla bak:
 
 ISRC şüpheli kayıtlarda adaylar çoğu zaman yanlış şarkıdır (aynı albümden başka
 parça). Doğrusunu `ara` ile bul.
+
+## Ters yön: Apple → Spotify
+
+Osman Apple'da bir listeye şarkı eklerse gece senkronu onu Spotify'daki aynı
+listeye ekler (ISRC ile). Kesin bulamadıklarını ve Apple'dan silinenleri sana bırakır:
+
+```bash
+sudo apple-esle ters        # {"eslesmeyen": [...], "silme_onayi": [...]}
+sudo apple-esle ters-onayla <am_playlist_id> <lib_id> <spotify_id>
+sudo apple-esle ters-atla <am_playlist_id> <lib_id>
+sudo apple-esle spotifydan-sil <id>      # YALNIZ Osman açıkça "sil" derse
+sudo apple-esle spotifyda-kalsin <id>    # Osman "kalsın" derse
+```
+
+- `eslesmeyen`: Apple'daki şarkı (`title`, `artist`, `reason`) ve en iyi 3
+  Spotify adayı (`spotify_id`). Aynı kararı ver: doğru kayıt varsa `ters-onayla`,
+  Spotify'da gerçekten yoksa ya da Apple'a özel bir kayıtsa `ters-atla`.
+  Spotify'da `spc` araması yapamazsın; adaylar yetmiyorsa dokunma, Osman'a sor.
+- `silme_onayi`: Osman'ın Apple'dan sildiği ve Spotify'da hâlâ duran şarkılar.
+  **Kendin silme.** Raporda listele ("Apple'dan şunları sildin, Spotify'dan da
+  sileyim mi?"). Osman Telegram'da açıkça cevap verince `spotifydan-sil` ya da
+  `spotifyda-kalsin` çalıştır. Spotify'dan silinen şarkı gece YouTube'dan da silinir.
 
 ## Sınırlar
 

@@ -96,6 +96,43 @@ def init_db():
             PRIMARY KEY (spotify_track_id, am_playlist_id)
         );
 
+        -- Ters yon (Apple -> Spotify): Apple listesinin son gorulen hali (kitaplik oge id'si
+        -- kalicidir; katalog id'si bazi ogelerde yok).
+        CREATE TABLE IF NOT EXISTS am_rev_seen (
+            am_playlist_id TEXT,
+            lib_id         TEXT,
+            catalog_id     TEXT,
+            title          TEXT,
+            artist         TEXT,
+            PRIMARY KEY (am_playlist_id, lib_id)
+        );
+
+        -- Apple'da eklenen ama Spotify karsiligi kesin bulunamayan sarkilar
+        CREATE TABLE IF NOT EXISTS am_rev_pending (
+            am_playlist_id  TEXT,
+            lib_id          TEXT,
+            catalog_id      TEXT,
+            title           TEXT,
+            artist          TEXT,
+            reason          TEXT,
+            candidates_json TEXT,
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (am_playlist_id, lib_id)
+        );
+
+        -- Apple'dan silinen sarkilar: Spotify'dan silmek Osman'in onayiyla
+        CREATE TABLE IF NOT EXISTS am_rev_removed (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            spotify_playlist_id TEXT,
+            spotify_track_id    TEXT,
+            playlist_name       TEXT,
+            title               TEXT,
+            artist              TEXT,
+            status              TEXT DEFAULT 'bekliyor',  -- bekliyor | silindi | kalsin
+            created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (spotify_playlist_id, spotify_track_id, status)
+        );
+
         -- Spotify sarkisi <-> Apple katalog sarkisi denkligi. ISRC ile bulunan ya da
         -- Osman'in elle onayladigi eslesmeler; iki yon de bunu "ayni sarki" sayar.
         -- am_song_id bos ('') ise: Osman "Apple'da yok" dedi, bir daha onerilmez.
@@ -406,3 +443,63 @@ def clear_am_none(spotify_track_id):
         cur = conn.execute("DELETE FROM am_links WHERE spotify_track_id=? AND via='none'",
                            (spotify_track_id,))
         return cur.rowcount > 0
+
+
+# --- Ters yon (Apple -> Spotify) ---
+
+def rev_seen(am_playlist_id):
+    with get_db() as conn:
+        return {r["lib_id"]: dict(r) for r in conn.execute(
+            "SELECT * FROM am_rev_seen WHERE am_playlist_id=?", (am_playlist_id,))}
+
+
+def set_rev_seen(am_playlist_id, items):
+    with get_db() as conn:
+        conn.execute("DELETE FROM am_rev_seen WHERE am_playlist_id=?", (am_playlist_id,))
+        conn.executemany(
+            "INSERT OR REPLACE INTO am_rev_seen VALUES (?,?,?,?,?)",
+            [(am_playlist_id, i["lib_id"], i.get("catalog_id"), i["title"], i["artist"])
+             for i in items])
+
+
+def add_rev_pending(am_playlist_id, item, reason, candidates_json):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO am_rev_pending (am_playlist_id, lib_id, catalog_id, title, "
+            "artist, reason, candidates_json) VALUES (?,?,?,?,?,?,?)",
+            (am_playlist_id, item["lib_id"], item.get("catalog_id"), item["title"],
+             item["artist"], reason, candidates_json))
+
+
+def get_rev_pending():
+    with get_db() as conn:
+        return [dict(r) for r in conn.execute(
+            "SELECT p.*, a.name AS playlist_name, a.spotify_playlist_id FROM am_rev_pending p "
+            "LEFT JOIN am_playlists a ON a.am_playlist_id=p.am_playlist_id ORDER BY created_at")]
+
+
+def remove_rev_pending(am_playlist_id, lib_id):
+    with get_db() as conn:
+        conn.execute("DELETE FROM am_rev_pending WHERE am_playlist_id=? AND lib_id=?",
+                     (am_playlist_id, lib_id))
+
+
+def add_rev_removed(spotify_playlist_id, spotify_track_id, playlist_name, title, artist):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO am_rev_removed (spotify_playlist_id, spotify_track_id, "
+            "playlist_name, title, artist) VALUES (?,?,?,?,?)",
+            (spotify_playlist_id, spotify_track_id, playlist_name, title, artist))
+
+
+def get_rev_removed(status="bekliyor"):
+    with get_db() as conn:
+        return [dict(r) for r in conn.execute(
+            "SELECT * FROM am_rev_removed WHERE status=? ORDER BY id", (status,))]
+
+
+def set_rev_removed_status(removed_id, status):
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM am_rev_removed WHERE id=?", (removed_id,)).fetchone()
+        conn.execute("UPDATE am_rev_removed SET status=? WHERE id=?", (status, removed_id))
+        return dict(row) if row else None

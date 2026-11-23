@@ -13,6 +13,11 @@ terimidir; hepsi bicim denetiminden gecer ve am_sync.py'ye arguman olarak gider
   sudo apple-esle yok <spotify_id>                # Apple'da karsiligi yok
   sudo apple-esle geri <spotify_id>               # 'yok' kararini geri al
   sudo apple-esle dinlenen                        # Apple'da son dinlenenler (JSON, salt okunur)
+  sudo apple-esle ters                            # Apple->Spotify: eslesmeyenler + silme onayi bekleyenler
+  sudo apple-esle ters-onayla <am_liste> <lib_id> <spotify_id>  # Apple eklemesini Spotify'a ekle
+  sudo apple-esle ters-atla <am_liste> <lib_id>   # bu Apple eklemesi Spotify'a gitmesin
+  sudo apple-esle spotifydan-sil <no>             # YALNIZ Osman onaylarsa: Apple'dan silineni Spotify'dan sil
+  sudo apple-esle spotifyda-kalsin <no>           # Osman: Spotify'da kalsin
 """
 import os
 import re
@@ -22,6 +27,9 @@ ROOT = "/opt/music-sync"
 PY = f"{ROOT}/venv/bin/python"
 SP = re.compile(r"^[A-Za-z0-9]{22}$")
 AM = re.compile(r"^[0-9]{1,15}$")
+AMPL = re.compile(r"^p\.[A-Za-z0-9]{6,40}$")
+LIB = re.compile(r"^i\.[A-Za-z0-9]{6,40}$")
+NO = re.compile(r"^[0-9]{1,9}$")
 USAGE = __doc__.split("\n\n", 2)[2].rstrip()
 
 
@@ -36,6 +44,17 @@ def main(argv):
     cmd, rest = argv[0], argv[1:]
     if cmd == "dinlenen" and not rest:
         run("--recent-json")
+    if cmd == "ters" and not rest:
+        run("--rev-json")
+    if cmd == "ters-onayla" and len(rest) == 3 and AMPL.match(rest[0]) and LIB.match(rest[1]) \
+            and SP.match(rest[2]):
+        run("--rev-approve", *rest)
+    if cmd == "ters-atla" and len(rest) == 2 and AMPL.match(rest[0]) and LIB.match(rest[1]):
+        run("--rev-skip", *rest)
+    if cmd == "spotifydan-sil" and len(rest) == 1 and NO.match(rest[0]):
+        run("--rev-remove", rest[0])
+    if cmd == "spotifyda-kalsin" and len(rest) == 1 and NO.match(rest[0]):
+        run("--rev-keep", rest[0])
     if cmd == "kuyruk" and not rest:
         run("--queue-json")
     if cmd == "ara" and len(rest) == 1 and 0 < len(rest[0]) <= 200 and "\n" not in rest[0]:
