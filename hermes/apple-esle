@@ -12,6 +12,7 @@ terimidir; hepsi bicim denetiminden gecer ve am_sync.py'ye arguman olarak gider
   sudo apple-esle onayla <spotify_id> <apple_id>  # ayni sarki say, listelere ekle
   sudo apple-esle yok <spotify_id>                # Apple'da karsiligi yok
   sudo apple-esle geri <spotify_id>               # 'yok' kararini geri al
+  sudo apple-esle dinlenen                        # Apple'da son dinlenenler (JSON, salt okunur)
 """
 import os
 import re
@@ -33,6 +34,8 @@ def main(argv):
     if not argv:
         sys.exit(USAGE)
     cmd, rest = argv[0], argv[1:]
+    if cmd == "dinlenen" and not rest:
+        run("--recent-json")
     if cmd == "kuyruk" and not rest:
         run("--queue-json")
     if cmd == "ara" and len(rest) == 1 and 0 < len(rest[0]) <= 200 and "\n" not in rest[0]:

@@ -7,12 +7,14 @@ import os
 
 from . import topla
 
-THRESHOLDS = {"youtube": 3, "youtube_auth": 2, "spotify": 3, "siniflandirma": 3}
+THRESHOLDS = {"youtube": 3, "youtube_auth": 2, "spotify": 3, "apple": 3, "siniflandirma": 3}
 MESSAGES = {
     "youtube_auth": "YouTube oturumu dustu (izleme gecmisi okunamiyor). Music Sync'in browser.json "
                     "cerezlerini yenilemek gerekiyor; o zamana kadar YouTube dinlemeleri kaydedilmiyor.",
     "youtube": "YouTube izleme gecmisi 3 saattir okunamiyor: {err}",
     "spotify": "Spotify son dinlenenler 3 saattir okunamiyor: {err}",
+    "apple": "Apple Music son dinlenenler 3 saattir okunamiyor (anahtar dolmus olabilir: "
+             "Mac'te am_token.py): {err}",
     "siniflandirma": "Muzik ayirma (Haiku) 3 denemedir basarisiz: {err}",
 }
 
@@ -41,7 +43,7 @@ def read_dump(path):
         return {"ok": False, "error": f"dokum okunamadi: {e}", "items": []}
 
 
-def run(db_path, dump_path, spotify_fetch, classify_fn, batch=40):
+def run(db_path, dump_path, spotify_fetch, classify_fn, batch=40, apple_fetch=None):
     """Doner: (ozet dict, uyari satirlari listesi)."""
     alerts, summary = [], {}
     db = topla.connect(db_path)
@@ -67,6 +69,15 @@ def run(db_path, dump_path, spotify_fetch, classify_fn, batch=40):
             summary["spotify"] = f"hata: {e}"
             _streak(db, "spotify", True, f"{type(e).__name__}: {e}"[:300], alerts)
         db.commit()
+
+        if apple_fetch is not None:
+            try:
+                summary["apple"] = topla.ingest_apple(db, apple_fetch())
+                _streak(db, "apple", False, None, alerts)
+            except Exception as e:
+                summary["apple"] = f"hata: {e}"
+                _streak(db, "apple", True, f"{type(e).__name__}: {e}"[:300], alerts)
+            db.commit()
 
         classified, err = 0, None
         for _ in range(10):  # tur basina en fazla 10 parti (ilk calismada ~200 video)

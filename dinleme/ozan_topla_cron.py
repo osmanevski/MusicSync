@@ -7,6 +7,7 @@ botunun giden kutusuna birakilir (Hermes Telegram botu kullanilmaz).
 """
 import json
 import os
+import subprocess
 import sys
 
 MUSIC_SYNC = "/opt/music-sync"
@@ -28,6 +29,15 @@ def spotify_fetch():
     return (data or {}).get("items", [])
 
 
+def apple_fetch():
+    # Apple anahtari root'ta; dar kapi yalniz son dinlenenleri okur (salt okunur).
+    r = subprocess.run(["sudo", "-n", "/usr/local/bin/apple-esle", "dinlenen"],
+                       capture_output=True, text=True, timeout=120)
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or r.stdout).strip()[-300:])
+    return json.loads(r.stdout)
+
+
 def telegram(text):
     try:
         telegram_giden.put(text)
@@ -37,7 +47,7 @@ def telegram(text):
 
 def main():
     summary, alerts = calistir.run(os.path.join(DATA, "dinleme.db"), os.path.join(DATA, "yt-gecmis.json"),
-                                   spotify_fetch, siniflandir.classify)
+                                   spotify_fetch, siniflandir.classify, apple_fetch=apple_fetch)
     with open(os.path.join(DATA, "son-tur.json"), "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, default=str)
     if alerts:

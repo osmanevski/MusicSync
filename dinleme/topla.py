@@ -128,6 +128,41 @@ def ingest_spotify(db, recent, now=None):
     return new
 
 
+def ingest_apple(db, recent, now=None):
+    """recent: Apple son dinlenenler (en yeni basta, zaman damgasiz). YouTube gibi: ilk turda
+    backfill, sonra onceki listeye gore basa yeni girenler 'live' (seen_at = bu tur).
+    Doner: {"new": n, "mode": first|live|gap}"""
+    now = now or now_iso()
+    items = [i for i in (recent or []) if i.get("id") and i.get("type", "songs") == "songs"]
+    for i in items:
+        db.execute("INSERT INTO tracks(id, title, artists, album, duration_ms) VALUES(?, ?, ?, ?, ?) "
+                   "ON CONFLICT(id) DO UPDATE SET title=excluded.title, artists=excluded.artists, "
+                   "album=excluded.album, duration_ms=excluded.duration_ms",
+                   (i["id"], i.get("title"), json.dumps([i["artists"]] if i.get("artists") else [],
+                                                        ensure_ascii=False),
+                    i.get("album"), i.get("duration_ms")))
+    cur = [i["id"] for i in items]
+    prev = get_state(db, "am_prev")
+    if prev is None:
+        for pos, tid in enumerate(cur):
+            db.execute("INSERT INTO plays(platform, item_id, played_at, seen_at, kind, pos) "
+                       "VALUES('apple', ?, NULL, NULL, 'backfill', ?)", (tid, pos))
+        mode, new = "first", len(cur)
+    else:
+        k = count_new_on_top(prev, cur)
+        mode = "live"
+        if k is None:
+            known = set(prev)
+            k = next((n for n, tid in enumerate(cur) if tid in known), len(cur))
+            mode = "gap"
+        for tid in cur[:k]:
+            db.execute("INSERT INTO plays(platform, item_id, played_at, seen_at, kind) "
+                       "VALUES('apple', ?, NULL, ?, 'live')", (tid, now))
+        new = k
+    set_state(db, "am_prev", cur)
+    return {"new": new, "mode": mode}
+
+
 def unclassified_videos(db, limit=40, max_fails=3):
     return db.execute("SELECT id, title, duration FROM videos WHERE classified_at IS NULL "
                       "AND classify_fails < ? ORDER BY first_seen DESC LIMIT ?", (max_fails, limit)).fetchall()

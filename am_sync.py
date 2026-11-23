@@ -267,6 +267,8 @@ def main():
     ap.add_argument("--review", action="store_true", help="Bekleyenleri Mac'te tek tek onayla")
     # Ozan (yapay zeka) icin makine okunur komutlar
     ap.add_argument("--queue-json", action="store_true", help="Bekleyenleri JSON yaz")
+    ap.add_argument("--recent-json", action="store_true",
+                    help="Apple'da son dinlenenler (en yeni basta), JSON; salt okunur")
     ap.add_argument("--search", metavar="TERIM", help="Apple katalogunda ara, JSON yaz")
     ap.add_argument("--approve", nargs=2, metavar=("SPOTIFY_ID", "APPLE_ID"))
     ap.add_argument("--reject", metavar="SPOTIFY_ID", help="Apple'da karsiligi yok")
@@ -283,6 +285,9 @@ def main():
         return
     if args.review:
         return _cli_review()
+    if args.recent_json:
+        print(json.dumps(amc.get_client().recent_played(), ensure_ascii=False))
+        return
     if args.queue_json:
         out = [{k: r.get(k) for k in ("spotify_track_id", "track_name", "artist_name",
                                       "spotify_duration", "isrc", "reason", "candidates")}

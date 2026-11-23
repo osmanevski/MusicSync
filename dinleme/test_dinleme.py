@@ -74,6 +74,33 @@ class Ingest(unittest.TestCase):
         self.assertEqual([v[0] for v in topla.unclassified_videos(self.db)], ["v3"])
 
 
+class Apple(unittest.TestCase):
+    def setUp(self):
+        self.db = topla.connect(":memory:")
+
+    def items(self, ids):
+        return [{"id": i, "type": "songs", "title": "T" + i, "artists": "A", "album": "",
+                 "duration_ms": 1000} for i in ids]
+
+    def plays(self, kind):
+        return [r[0] for r in self.db.execute(
+            "SELECT item_id FROM plays WHERE platform='apple' AND kind=? ORDER BY id", (kind,))]
+
+    def test_backfill_then_new_on_top_and_replay(self):
+        self.assertEqual(topla.ingest_apple(self.db, self.items(["3", "2", "1"]))["mode"], "first")
+        self.assertEqual(self.plays("backfill"), ["3", "2", "1"])
+        r = topla.ingest_apple(self.db, self.items(["5", "4", "3", "2", "1"]))
+        self.assertEqual((r["new"], r["mode"]), (2, "live"))
+        # tekrar dinlenen eski sarki basa tasinir: yeni dinleme sayilir
+        r = topla.ingest_apple(self.db, self.items(["2", "5", "4", "3", "1"]))
+        self.assertEqual(r["new"], 1)
+        self.assertEqual(self.plays("live"), ["5", "4", "2"])
+
+    def test_unchanged_adds_nothing(self):
+        topla.ingest_apple(self.db, self.items(["3", "2", "1"]))
+        self.assertEqual(topla.ingest_apple(self.db, self.items(["3", "2", "1"]))["new"], 0)
+
+
 class Classifier(unittest.TestCase):
     def test_parse_fenced(self):
         out = siniflandir.parse_reply('```json\n[{"id":"a","muzik":false}]\n```')

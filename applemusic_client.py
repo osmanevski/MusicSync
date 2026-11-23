@@ -116,6 +116,24 @@ class Client:
         songs = (((data or {}).get("results") or {}).get("songs") or {}).get("data") or []
         return [_candidate(s) for s in songs]
 
+    # --- Dinleme gecmisi (kullanici anahtari, salt okunur) ---
+    def recent_played(self, pages=2):
+        """Son calinan sarkilar, en yeni basta. Apple zaman damgasi vermez; sayfa 30."""
+        out = []
+        for i in range(pages):
+            d = self._req("GET", "/me/recent/played/tracks", user=True,
+                          params={"limit": 30, "offset": 30 * i})
+            items = (d or {}).get("data") or []
+            for t in items:
+                a = t.get("attributes") or {}
+                out.append({"id": str(t.get("id")), "type": t.get("type"),
+                            "title": a.get("name") or "", "artists": a.get("artistName") or "",
+                            "album": a.get("albumName") or "",
+                            "duration_ms": a.get("durationInMillis")})
+            if len(items) < 30:
+                break
+        return out
+
     # --- Kitaplik (kullanici anahtari) ---
     def library_playlists(self):
         return [
