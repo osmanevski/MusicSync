@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""Ozan (hermes kullanicisi) icin dar kapsamli Apple Music eslestirme kapisi.
+
+Kurulum: /opt/operator/bin/apple-esle, root:root 0755; sudoers'ta yalniz bu yol.
+Music Sync'in veritabani ve Apple anahtarlari root'ta kalir. Kullanici girdisi
+yalniz eylem adi, bir Spotify sarki id'si, bir Apple katalog id'si ya da bir arama
+terimidir; hepsi bicim denetiminden gecer ve am_sync.py'ye arguman olarak gider
+(kabuk yok).
+
+  sudo apple-esle kuyruk                          # inceleme bekleyenler (JSON)
+  sudo apple-esle ara "<sarki sanatci>"           # Apple katalog aramasi (JSON)
+  sudo apple-esle onayla <spotify_id> <apple_id>  # ayni sarki say, listelere ekle
+  sudo apple-esle yok <spotify_id>                # Apple'da karsiligi yok
+"""
+import os
+import re
+import sys
+
+ROOT = "/opt/music-sync"
+PY = f"{ROOT}/venv/bin/python"
+SP = re.compile(r"^[A-Za-z0-9]{22}$")
+AM = re.compile(r"^[0-9]{1,15}$")
+USAGE = __doc__.split("\n\n", 2)[2].rstrip()
+
+
+def run(*args):
+    os.chdir(ROOT)
+    os.execv(PY, [PY, "am_sync.py", *args])
+
+
+def main(argv):
+    if not argv:
+        sys.exit(USAGE)
+    cmd, rest = argv[0], argv[1:]
+    if cmd == "kuyruk" and not rest:
+        run("--queue-json")
+    if cmd == "ara" and len(rest) == 1 and 0 < len(rest[0]) <= 200 and "\n" not in rest[0]:
+        run("--search", rest[0])
+    if cmd == "onayla" and len(rest) == 2 and SP.match(rest[0]) and AM.match(rest[1]):
+        run("--approve", rest[0], rest[1])
+    if cmd == "yok" and len(rest) == 1 and SP.match(rest[0]):
+        run("--reject", rest[0])
+    sys.exit(USAGE)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
