@@ -300,7 +300,8 @@ def main():
         return
     if args.approve:
         n = approve(amc.get_client(), args.approve[0], args.approve[1])
-        print(f"onaylandi, {n} listeye eklendi")
+        print(f"onaylandi; {n} listeye eklendi" if n else
+              "onaylandi; sarki bekledigi listelerde zaten vardi, yalniz kayda gecti")
         return
     if args.unreject:
         print("geri alindi" if db.clear_am_none(args.unreject) else "yok kaydi bulunamadi")
