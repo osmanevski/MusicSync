@@ -37,6 +37,22 @@ import applemusic_client as amc
 import telegram_notify
 from sync import read_watchlist
 
+AM_WATCHLIST_FILE = "am_watchlist.txt"   # yalniz Apple'a giden ek listeler (YouTube'a gitmez)
+
+
+def read_am_targets():
+    """Apple kolunun izledigi Spotify liste id'leri: ortak watchlist + am_watchlist.txt."""
+    ids = list(read_watchlist())
+    try:
+        with open(AM_WATCHLIST_FILE, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and line not in ids:
+                    ids.append(line)
+    except FileNotFoundError:
+        pass
+    return ids
+
 # ISRC eslesse de bariz tutarsizlik varsa yazma, incelemeye gonder
 ISRC_MAX_DURATION_DIFF = 10   # saniye
 LIBRARY_SETTLE_SEC = 8        # kitapliga eklenen sarkilarin oturmasi icin bekleme
@@ -301,7 +317,7 @@ def main():
         if args.playlist:
             targets = [p for p in playlists if p["id"] == args.playlist]
         else:
-            ids = read_watchlist()
+            ids = read_am_targets()
             targets = [p for p in playlists if p["id"] in ids]
         if not targets:
             print("Senkronlanacak liste yok.")

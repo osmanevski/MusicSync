@@ -185,6 +185,15 @@ class TestAmSync(unittest.TestCase):
         r = am_sync.sync_playlist(self.am, None, self.pl, library=[])
         self.assertEqual(r["pending"], 1)
 
+    def test_am_targets_merge_watchlists_without_duplicates(self):
+        old = os.getcwd(); os.chdir(self.tmp.name)
+        try:
+            open("watchlist.txt", "w").write("a\nb\n")
+            open("am_watchlist.txt", "w").write("# not\nb\nc\n")
+            self.assertEqual(am_sync.read_am_targets(), ["a", "b", "c"])
+        finally:
+            os.chdir(old)
+
     def test_adopts_existing_playlist_and_skips_songs_already_there(self):
         self.am.playlist_catalog_ids.return_value = {"s1"}
         lib = [{"id": "p.old", "name": "Liste", "can_edit": True}]
