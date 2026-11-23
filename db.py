@@ -77,7 +77,50 @@ def init_db():
             synced_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (yt_playlist_id, yt_video_id, spotify_playlist_id)
         );
+
+        -- Apple Music kolu (am_sync.py). Yalniz ekler; Apple'in API'si silemez.
+        CREATE TABLE IF NOT EXISTS am_playlists (
+            spotify_playlist_id TEXT PRIMARY KEY,
+            am_playlist_id      TEXT,
+            name                TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS am_synced (
+            spotify_track_id TEXT,
+            am_playlist_id   TEXT,
+            am_song_id       TEXT,
+            track_name       TEXT,
+            artist_name      TEXT,
+            via              TEXT,   -- isrc | search | existing
+            synced_at        TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (spotify_track_id, am_playlist_id)
+        );
+
+        -- Spotify sarkisi <-> Apple katalog sarkisi denkligi. ISRC ile bulunan ya da
+        -- Osman'in elle onayladigi eslesmeler; iki yon de bunu "ayni sarki" sayar.
+        -- am_song_id bos ('') ise: Osman "Apple'da yok" dedi, bir daha onerilmez.
+        CREATE TABLE IF NOT EXISTS am_links (
+            spotify_track_id TEXT PRIMARY KEY,
+            am_song_id       TEXT,
+            via              TEXT,   -- isrc | manual | none
+            created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS am_pending (
+            spotify_track_id TEXT,
+            am_playlist_id   TEXT,
+            track_name       TEXT,
+            artist_name      TEXT,
+            candidates_json  TEXT,
+            created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (spotify_track_id, am_playlist_id)
+        );
         """)
+        # am_pending'e sonradan eklenen alanlar (eski tablolar icin)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(am_pending)")}
+        for col, typ in (("reason", "TEXT"), ("spotify_duration", "INTEGER"), ("isrc", "TEXT")):
+            if col not in cols:
+                conn.execute(f"ALTER TABLE am_pending ADD COLUMN {col} {typ}")
 
 
 def is_synced(spotify_track_id, yt_playlist_id):
@@ -256,3 +299,102 @@ def remove_reverse_synced(yt_playlist_id, yt_video_id, spotify_playlist_id):
                WHERE yt_playlist_id=? AND yt_video_id=? AND spotify_playlist_id=?""",
             (yt_playlist_id, yt_video_id, spotify_playlist_id)
         )
+
+
+# --- Apple Music kolu ---
+
+def get_am_playlist(spotify_playlist_id):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT am_playlist_id FROM am_playlists WHERE spotify_playlist_id=?",
+            (spotify_playlist_id,)).fetchone()
+        return row["am_playlist_id"] if row else None
+
+
+def set_am_playlist(spotify_playlist_id, am_playlist_id, name):
+    with get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO am_playlists VALUES (?,?,?)",
+                     (spotify_playlist_id, am_playlist_id, name))
+
+
+def am_done_ids(am_playlist_id, include_pending=True):
+    """Bu Apple listesi icin islenmis (eklenmis ya da beklemede) Spotify id'leri."""
+    with get_db() as conn:
+        ids = {r[0] for r in conn.execute(
+            "SELECT spotify_track_id FROM am_synced WHERE am_playlist_id=?",
+            (am_playlist_id,))}
+        if include_pending:
+            ids |= {r[0] for r in conn.execute(
+                "SELECT spotify_track_id FROM am_pending WHERE am_playlist_id=?",
+                (am_playlist_id,))}
+        return ids
+
+
+def am_song_ids(am_playlist_id):
+    with get_db() as conn:
+        return {r[0] for r in conn.execute(
+            "SELECT am_song_id FROM am_synced WHERE am_playlist_id=?", (am_playlist_id,))}
+
+
+def mark_am_synced(rows):
+    """rows: [(spotify_track_id, am_playlist_id, am_song_id, name, artists, via)]"""
+    with get_db() as conn:
+        conn.executemany(
+            """INSERT OR REPLACE INTO am_synced
+               (spotify_track_id, am_playlist_id, am_song_id, track_name, artist_name, via)
+               VALUES (?,?,?,?,?,?)""", rows)
+        conn.executemany(
+            "DELETE FROM am_pending WHERE spotify_track_id=? AND am_playlist_id=?",
+            [(r[0], r[1]) for r in rows])
+
+
+def add_am_pending(spotify_track_id, am_playlist_id, name, artists, candidates_json,
+                   reason="", spotify_duration=None, isrc=""):
+    with get_db() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO am_pending
+               (spotify_track_id, am_playlist_id, track_name, artist_name, candidates_json,
+                reason, spotify_duration, isrc)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (spotify_track_id, am_playlist_id, name, artists, candidates_json,
+             reason, spotify_duration, isrc))
+
+
+def get_am_pending(am_playlist_id=None):
+    with get_db() as conn:
+        if am_playlist_id:
+            rows = conn.execute("SELECT * FROM am_pending WHERE am_playlist_id=?",
+                                (am_playlist_id,)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM am_pending").fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_am_link(spotify_track_id):
+    """Donen: None (bilinmiyor) | {am_song_id, via}"""
+    with get_db() as conn:
+        row = conn.execute("SELECT am_song_id, via FROM am_links WHERE spotify_track_id=?",
+                           (spotify_track_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def set_am_link(spotify_track_id, am_song_id, via):
+    with get_db() as conn:
+        conn.execute("INSERT OR REPLACE INTO am_links (spotify_track_id, am_song_id, via) "
+                     "VALUES (?,?,?)", (spotify_track_id, am_song_id or "", via))
+
+
+def spotify_for_am_song(am_song_id):
+    with get_db() as conn:
+        row = conn.execute("SELECT spotify_track_id FROM am_links WHERE am_song_id=?",
+                           (am_song_id,)).fetchone()
+        return row[0] if row else None
+
+
+def remove_am_pending(spotify_track_id):
+    """Bir sarkinin tum listelerdeki bekleyen kayitlarini sil; silinen satirlari dondur."""
+    with get_db() as conn:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM am_pending WHERE spotify_track_id=?", (spotify_track_id,))]
+        conn.execute("DELETE FROM am_pending WHERE spotify_track_id=?", (spotify_track_id,))
+        return rows

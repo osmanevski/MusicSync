@@ -1,0 +1,14 @@
+# /etc/systemd/system/music-sync-am.service
+# Spotify -> Apple Music (yalniz ekleme). YouTube senkronundan sonra calisir.
+[Unit]
+Description=Music Sync daily Spotify -> Apple Music sync
+After=network-online.target music-sync-sync.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/music-sync
+Environment=PYTHONUTF8=1
+Environment=PYTHONIOENCODING=utf-8
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/music-sync/venv/bin/python am_sync.py

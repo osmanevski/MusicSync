@@ -23,6 +23,7 @@ import ytmusic_client as ytc
 import matcher
 import sync as sync_module
 import reverse_sync
+import am_sync
 
 # SSL dogrulamasi ACIK (certifi CA paketi ile). Windows sistem deposu bu
 # sunucuda bozuk kok yuzunden zinciri kuramiyordu; certifi cozuyor.
@@ -33,6 +34,7 @@ API = f"https://api.telegram.org/bot{config.TELEGRAM_TOKEN}"
 
 # Review oturumu icin basit durum (tek kullanici oldugu icin global yeter)
 _review_state = {"queue": [], "index": 0}
+_am_review = {"queue": [], "index": 0, "client": None}
 
 
 def _api(method, params=None, timeout=40):
@@ -99,6 +101,7 @@ def main_menu():
         [("🟢 Spotify Listeleri", "lists:0")],
         [("🔴 YouTube Listeleri", "yt_lists:0")],
         [("⚠️ Supheliler", "review_start")],
+        [("🍎 Apple incelemesi", "amr_start")],
         [("❓ Yardim", "help")],
     ])
 
@@ -399,6 +402,73 @@ def review_reject(yt, idx):
     review_show(yt)
 
 
+# --- Apple Music incelemesi (ISRC'si tutmayan sarkilar) ---
+
+def amr_start():
+    q = am_sync.review_queue()
+    if not q:
+        send("✅ Apple icin bekleyen sarki yok.")
+        return
+    _am_review.update(queue=q, index=0)
+    send(f"🍎 {len(q)} sarkinin Apple karsiligi senin onayini bekliyor.\n"
+         "Sectigin aday 'ayni sarki' sayilir ve iki yonde de kullanilir.")
+    amr_show()
+
+
+def amr_show():
+    q, i = _am_review["queue"], _am_review["index"]
+    if i >= len(q):
+        _am_review["queue"] = []
+        send("✅ Apple incelemesi bitti.")
+        return
+    r = q[i]
+    lines = [f"<b>{i+1}/{len(q)}</b>",
+             f"🟢 {html.escape(r['artist_name'])} - {html.escape(r['track_name'])}", ""]
+    buttons = []
+    for j, c in enumerate(r["candidates"][:3], 1):
+        lines.append(f"{j}. {html.escape(c['artists'])} - {html.escape(c['title'])} "
+                     f"({c.get('duration_sec', '?')}s) skor={c.get('score', '?')}")
+        buttons.append([(f"{j}. ayni sarki", f"amr_pick:{i}:{j-1}")])
+    if not r["candidates"]:
+        lines.append("Apple'da aday bulunamadi.")
+    buttons.append([("⏭️ Atla", f"amr_skip:{i}"), ("🚫 Apple'da yok", f"amr_none:{i}")])
+    buttons.append([("🛑 Bitir", "amr_stop")])
+    send("\n".join(lines), buttons=buttons)
+
+
+def amr_pick(i, j):
+    q = _am_review["queue"]
+    if i >= len(q) or j >= len(q[i]["candidates"]):
+        return
+    r, c = q[i], q[i]["candidates"][j]
+    try:
+        if not _am_review["client"]:
+            _am_review["client"] = am_sync.amc.get_client()
+        n = am_sync.approve(_am_review["client"], r["spotify_track_id"], c["am_id"])
+        send(f"✅ Eslesti: {html.escape(c['artists'])} - {html.escape(c['title'])} ({n} liste)")
+    except am_sync.amc.AuthError:
+        send("⚠️ Apple anahtari gecersiz; Mac'te am_token.py ile yenile.")
+        return
+    except Exception as e:
+        send(f"Hata: {html.escape(str(e))}")
+        return
+    _am_review["index"] += 1
+    amr_show()
+
+
+def amr_skip(i):
+    _am_review["index"] += 1
+    amr_show()
+
+
+def amr_none(i):
+    q = _am_review["queue"]
+    if i < len(q):
+        am_sync.reject(q[i]["spotify_track_id"])
+    _am_review["index"] += 1
+    amr_show()
+
+
 # --- Callback yonlendirici ---
 
 def handle_callback(data, callback_id, sp, yt):
@@ -447,6 +517,18 @@ def handle_callback(data, callback_id, sp, yt):
         review_skip(yt, int(data.split(":")[1]))
     elif data.startswith("rev_reject:"):
         review_reject(yt, int(data.split(":")[1]))
+    elif data == "amr_start":
+        amr_start()
+    elif data.startswith("amr_pick:"):
+        _, i, c = data.split(":")
+        amr_pick(int(i), int(c))
+    elif data.startswith("amr_skip:"):
+        amr_skip(int(data.split(":")[1]))
+    elif data.startswith("amr_none:"):
+        amr_none(int(data.split(":")[1]))
+    elif data == "amr_stop":
+        _am_review["queue"] = []
+        send("🛑 Apple incelemesi bitirildi.")
     elif data == "rev_stop":
         _review_state["queue"] = []
         send("🛑 Review bitirildi.")
@@ -459,7 +541,8 @@ def cmd_help():
          "/sync 53 — '53'u senkronla + watchlist'e ekle\n"
          "/list — listeleri goster\n"
          "/ytsync <liste adi> — YouTube'dan Spotify'a senkronla\n"
-         "/review — supheli eslesmeler\n\n"
+         "/review — supheli eslesmeler\n"
+         "/apple — Apple Music karsiligi onay bekleyenler\n\n"
          "Komut olmayan her mesaj <b>Ozan</b>'a (DJ) gider: akis, radyo, dinlediklerin.\n"
          "/ozan &lt;mesaj&gt; ile de yazabilirsin.\n\n"
          "Veya /menu yazip butonlari kullan.")
@@ -500,6 +583,8 @@ def handle_text(text, sp, yt):
             send(f"YouTube Music'te '{arg}' bulunamadi.")
             return
         do_reverse_sync(sp, yt, target["id"])
+    elif cmd in ("/apple", "apple"):
+        amr_start()
     elif cmd in ("/review", "review"):
         review_start(yt)
     elif cmd in ("/help", "help"):

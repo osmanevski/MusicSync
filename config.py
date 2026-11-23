@@ -21,6 +21,13 @@ YT_CLIENT_SECRET = os.getenv("YT_CLIENT_SECRET")
 YT_OAUTH_FILE = "oauth.json"
 YT_BROWSER_FILE = "browser.json"
 
+# --- Apple Music (opsiyonel kol; am_sync.py) ---
+APPLE_TEAM_ID = os.getenv("APPLE_TEAM_ID", "")
+APPLE_KEY_ID = os.getenv("APPLE_KEY_ID", "")
+APPLE_KEY_PATH = os.getenv("APPLE_KEY_PATH", "")          # MusicKit .p8 dosyasi
+APPLE_STOREFRONT = os.getenv("APPLE_STOREFRONT", "tr")
+APPLE_USER_TOKEN_FILE = ".applemusic_user_token"
+
 # --- Eslestirme ayarlari ---
 # Sarki suresi karsilastirmasi icin tolerans (saniye).
 # Spotify ile YouTube ayni sarkida bazen intro/outro farki olabiliyor.

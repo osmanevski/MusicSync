@@ -45,7 +45,7 @@ def get_playlist_snapshot(sp, playlist_id):
 def get_tracks(sp, playlist_id):
     """
     Playlist icindeki tum sarkilari dondur:
-    [{id, name, artists, duration_sec, pos}]
+    [{id, name, artists, duration_sec, pos, isrc}]
     artists: virgulle birlesik sanatci isimleri
     pos: listedeki gercek yeri (atlanan lokal/silinmis ogeler de sayilir; reorder icin)
     """
@@ -53,7 +53,7 @@ def get_tracks(sp, playlist_id):
     pos = -1
     results = sp.playlist_items(
         playlist_id,
-        fields="items(track(id,name,duration_ms,artists(name))),next",
+        fields="items(track(id,name,duration_ms,artists(name),external_ids(isrc))),next",
         additional_types=["track"],
     )
     while results:
@@ -73,6 +73,7 @@ def get_tracks(sp, playlist_id):
                 "artists": ", ".join(artist_names),
                 "duration_sec": round((t.get("duration_ms") or 0) / 1000),
                 "pos": pos,
+                "isrc": ((t.get("external_ids") or {}).get("isrc") or "").upper(),
             })
         results = sp.next(results) if results.get("next") else None
     return tracks

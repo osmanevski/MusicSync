@@ -4,6 +4,8 @@
 browser.json
 headers.txt
 oauth.json
+.applemusic_user_token
+*.p8
 
 # --- Kisisel liste id'leri (repo'da ornek dosya var: watchlist.example.txt) ---
 watchlist.txt
@@ -33,3 +35,4 @@ AGENTS.md
 
 # Ozan akis listesinin YouTube id durumu (sunucu)
 akis-state.json
+apple-eski-*.tsv
