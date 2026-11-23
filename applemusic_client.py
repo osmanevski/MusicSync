@@ -147,6 +147,29 @@ class Client:
             self._req("POST", "/me/library", user=True,
                       params={"ids[songs]": ",".join(catalog_ids[i:i + ADD_BATCH])})
 
+    def missing_from_library(self, catalog_ids):
+        """Kitapliga henuz dusmemis katalog id'leri (relate=library ile)."""
+        missing = []
+        for i in range(0, len(catalog_ids), 25):
+            chunk = catalog_ids[i:i + 25]
+            d = self._req("GET", f"/catalog/{self.storefront}/songs", user=True,
+                          params={"ids": ",".join(chunk), "relate": "library"})
+            for s in (d or {}).get("data") or []:
+                lib = ((s.get("relationships") or {}).get("library") or {}).get("data")
+                if not lib:
+                    missing.append(str(s.get("id")))
+        return missing
+
+    def wait_in_library(self, catalog_ids, timeout=300, step=5):
+        """Hepsi kitapliga dusene kadar bekle. Kalanlari dondurur (bos = hazir)."""
+        left = list(dict.fromkeys(catalog_ids))
+        deadline = time.time() + timeout
+        while left and time.time() < deadline:
+            left = self.missing_from_library(left)
+            if left:
+                time.sleep(step)
+        return left
+
     def add_tracks(self, playlist_id, catalog_ids):
         """Listenin sonuna ekler; eklenen sayisini dondurur."""
         added = 0

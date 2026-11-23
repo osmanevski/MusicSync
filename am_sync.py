@@ -55,7 +55,7 @@ def read_am_targets():
 
 # ISRC eslesse de bariz tutarsizlik varsa yazma, incelemeye gonder
 ISRC_MAX_DURATION_DIFF = 10   # saniye
-LIBRARY_SETTLE_SEC = 8        # kitapliga eklenen sarkilarin oturmasi icin bekleme
+LIBRARY_WAIT_SEC = 300        # kitapliga eklenen sarkilarin dusmesi icin en uzun bekleme
 ISRC_MIN_NAME_SIM = 0.35      # isim ve sanatci ikisi birden bunun altindaysa supheli
 
 
@@ -183,8 +183,12 @@ def sync_playlist(am, sp, pl, library=None, dry_run=False, retry_pending=False):
                        for t, sid, via, add in plan if not add])
     # Once kitapliga: kitaplikta olmayan sarki listeye arkadan dusup sirayi bozuyor
     if to_add:
-        am.add_to_library([sid for _, sid, _, _ in to_add])
-        time.sleep(max(LIBRARY_SETTLE_SEC, len(to_add) / 50) if LIBRARY_SETTLE_SEC else 0)
+        ids = [sid for _, sid, _, _ in to_add]
+        am.add_to_library(ids)
+        left = am.wait_in_library(ids, timeout=LIBRARY_WAIT_SEC)
+        if left:
+            print(f"  ! {len(left)} sarki {LIBRARY_WAIT_SEC} sn icinde kitapliga dusmedi; "
+                  "liste sirasi bozulabilir")
     # Parca parca ekle ve her parcayi hemen kaydet: yarida kesilirse tekrar eklenmez
     for i in range(0, len(to_add), amc.ADD_BATCH):
         chunk = to_add[i:i + amc.ADD_BATCH]

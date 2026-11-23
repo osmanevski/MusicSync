@@ -87,6 +87,15 @@ class TestClient(unittest.TestCase):
         self.assertEqual(http.request.call_args_list[1][0][1],
                          "https://api.music.apple.com/v1/me/library/playlists?offset=100")
 
+    def test_wait_in_library_polls_until_present(self):
+        http = MagicMock()
+        song = lambda i, lib: {"id": i, "relationships": {"library": {"data": [{"id": "l"}] if lib else []}}}
+        http.request.side_effect = [Resp(200, {"data": [song("1", True), song("2", False)]}),
+                                    Resp(200, {"data": [song("2", True)]})]
+        c = amc.Client("dev", "user", session=http)
+        self.assertEqual(c.wait_in_library(["1", "2"], timeout=5, step=0), [])
+        self.assertEqual(http.request.call_count, 2)
+
     def test_user_call_without_token_refuses(self):
         c = amc.Client("dev", None, session=MagicMock())
         with self.assertRaises(amc.AuthError):
@@ -105,7 +114,7 @@ class TestAmSync(unittest.TestCase):
         self.am.search_songs.side_effect = lambda name, artists: (
             [C("s2", "Iki")] if name == "Iki" else [C("zz", "Tamamen Baska", "B", 40)])
         self.am.create_playlist.return_value = "p.new"
-        am_sync.LIBRARY_SETTLE_SEC = 0
+        self.am.wait_in_library.return_value = []
         self.tracks = [T("t1", "Bir", isrc="I1"), T("t2", "Iki"), T("t3", "Uc")]
         am_sync.spc.get_tracks = MagicMock(return_value=self.tracks)
 
