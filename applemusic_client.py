@@ -140,6 +140,13 @@ class Client:
         })
         return data["data"][0]["id"]
 
+    def add_to_library(self, catalog_ids):
+        """Sarkilari once kitapliga ekle. Kitaplikta olmayan sarki listeye gec
+        (arkadan) eklendigi icin sira bozuluyor; once kitaplik, sonra liste."""
+        for i in range(0, len(catalog_ids), ADD_BATCH):
+            self._req("POST", "/me/library", user=True,
+                      params={"ids[songs]": ",".join(catalog_ids[i:i + ADD_BATCH])})
+
     def add_tracks(self, playlist_id, catalog_ids):
         """Listenin sonuna ekler; eklenen sayisini dondurur."""
         added = 0

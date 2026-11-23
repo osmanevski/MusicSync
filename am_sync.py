@@ -20,6 +20,7 @@ Kullanim:
 """
 import sys
 import json
+import time
 import argparse
 
 try:
@@ -38,6 +39,7 @@ from sync import read_watchlist
 
 # ISRC eslesse de bariz tutarsizlik varsa yazma, incelemeye gonder
 ISRC_MAX_DURATION_DIFF = 10   # saniye
+LIBRARY_SETTLE_SEC = 8        # kitapliga eklenen sarkilarin oturmasi icin bekleme
 ISRC_MIN_NAME_SIM = 0.35      # isim ve sanatci ikisi birden bunun altindaysa supheli
 
 
@@ -163,6 +165,10 @@ def sync_playlist(am, sp, pl, library=None, dry_run=False, retry_pending=False):
     # Zaten listede olanlar: yalniz kayda gecir
     db.mark_am_synced([(t["id"], am_pid, sid, t["name"], t["artists"], "existing")
                        for t, sid, via, add in plan if not add])
+    # Once kitapliga: kitaplikta olmayan sarki listeye arkadan dusup sirayi bozuyor
+    if to_add:
+        am.add_to_library([sid for _, sid, _, _ in to_add])
+        time.sleep(max(LIBRARY_SETTLE_SEC, len(to_add) / 50) if LIBRARY_SETTLE_SEC else 0)
     # Parca parca ekle ve her parcayi hemen kaydet: yarida kesilirse tekrar eklenmez
     for i in range(0, len(to_add), amc.ADD_BATCH):
         chunk = to_add[i:i + amc.ADD_BATCH]
@@ -202,6 +208,7 @@ def approve(am, spotify_track_id, am_song_id):
     for r in rows:
         pid = r["am_playlist_id"]
         if am_song_id not in db.am_song_ids(pid):
+            am.add_to_library([am_song_id])
             am.add_tracks(pid, [am_song_id])
             n += 1
         db.mark_am_synced([(spotify_track_id, pid, am_song_id, r["track_name"],

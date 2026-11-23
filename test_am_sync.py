@@ -105,6 +105,7 @@ class TestAmSync(unittest.TestCase):
         self.am.search_songs.side_effect = lambda name, artists: (
             [C("s2", "Iki")] if name == "Iki" else [C("zz", "Tamamen Baska", "B", 40)])
         self.am.create_playlist.return_value = "p.new"
+        am_sync.LIBRARY_SETTLE_SEC = 0
         self.tracks = [T("t1", "Bir", isrc="I1"), T("t2", "Iki"), T("t3", "Uc")]
         am_sync.spc.get_tracks = MagicMock(return_value=self.tracks)
 
@@ -124,6 +125,7 @@ class TestAmSync(unittest.TestCase):
         r = am_sync.sync_playlist(self.am, None, self.pl, library=[])
         self.assertEqual((r["added"], r["pending"]), (1, 2))
         self.am.add_tracks.assert_called_once_with("p.new", ["s1"])
+        self.am.add_to_library.assert_called_once_with(["s1"])
         self.assertEqual(db.get_am_link("t1"), {"am_song_id": "s1", "via": "isrc"})
         q = am_sync.review_queue()
         self.assertEqual([x["spotify_track_id"] for x in q], ["t2", "t3"])
