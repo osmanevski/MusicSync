@@ -266,10 +266,16 @@ def reject(spotify_track_id):
 
 def _summary(results, rev=()):
     changed = [r for r in results if r["added"] or r["pending"]]
-    rev = [r for r in rev if r["added"] or r["pending"] or r["removed"]]
+    rev = [r for r in rev if r["added"] or r["pending"] or r["removed"]
+           or r.get("blocked") or r.get("error")]
     rev_lines = []
     for r in rev:
         parts = []
+        if r.get("blocked"):
+            parts.append(f"⚠️ {r['blocked']} yeni oge birden: toplu ekleme sayildi, "
+                         "Spotify'a yazilmadi (kontrol et)")
+        if r.get("error"):
+            parts.append(f"⚠️ hata: {r['error']}")
         if r["added"]:
             parts.append(f"+{r['added']} Spotify'a eklendi")
         if r["pending"]:
@@ -313,6 +319,8 @@ def main():
     ap.add_argument("--rev-skip", nargs=2, metavar=("AM_PLAYLIST_ID", "LIB_ID"),
                     help="Bu Apple eklemesi Spotify'a gitmesin")
     ap.add_argument("--rev-remove", type=int, metavar="ID", help="Apple'dan silineni Spotify'dan da sil")
+    ap.add_argument("--rev-baseline", metavar="AM_PLAYLIST_ID",
+                    help="Apple listesinin bugunku hali dogru: anlik goruntuyu yenile (Osman)")
     ap.add_argument("--rev-keep", type=int, metavar="ID", help="Apple'dan silinen Spotify'da kalsin")
     ap.add_argument("--unreject", metavar="SPOTIFY_ID",
                     help="'yok' kararini geri al; sarki sonraki turda yeniden aranir")
@@ -337,6 +345,10 @@ def main():
     if args.rev_skip:
         db.remove_rev_pending(*args.rev_skip)
         print("atlandi")
+        return
+    if args.rev_baseline:
+        n = am_reverse.rebaseline(amc.get_client(), args.rev_baseline)
+        print(f"anlik goruntu yenilendi: {n} oge")
         return
     if args.rev_remove or args.rev_keep:
         rid = args.rev_remove or args.rev_keep

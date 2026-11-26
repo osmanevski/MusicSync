@@ -20,6 +20,11 @@ import spotify_client as spc
 import sort_playlists
 
 MAX_REMOVED_PER_LIST = 15   # bir gecede bundan fazla silinme: veri hatasi say, kaydetme
+# Bir gecede bundan fazla yeni oge: elle eklenmis sayma (orn. butun bir liste yanlislikla
+# eklendi, 25 Kas 2026'da Karmasik Liste 37'ye 2006 sarkiyla dustu). Hicbir sey yazilmaz,
+# anlik goruntu de guncellenmez; Osman duzeltene ya da --rev-baseline verene kadar her gece uyarir.
+MAX_ADDED_PER_LIST = 30
+SPOTIFY_ADD_BATCH = 100     # Spotify tek istekte en fazla 100 oge kabul eder
 ISRC_MAX_DURATION_DIFF = 10
 
 
@@ -44,7 +49,8 @@ def _search_isrc(sp, isrc):
 
 def reverse_playlist(am, sp, sp_playlist_id, am_playlist_id, name, dry_run=False):
     """Doner: {"name", "added", "pending", "removed", "baseline"}"""
-    stats = {"name": name, "added": 0, "pending": 0, "removed": 0, "baseline": False}
+    stats = {"name": name, "added": 0, "pending": 0, "removed": 0, "baseline": False,
+             "blocked": 0}
     items = am.playlist_items(am_playlist_id)
     seen = db.rev_seen(am_playlist_id)
     if not seen:
@@ -58,6 +64,11 @@ def reverse_playlist(am, sp, sp_playlist_id, am_playlist_id, name, dry_run=False
     gone = [v for k, v in seen.items() if k not in now_ids]
     if not new and not gone:
         return stats
+    if len(new) > MAX_ADDED_PER_LIST:
+        stats["blocked"] = len(new)
+        print(f"  ! '{name}': Apple listesinde {len(new)} yeni oge birden var; toplu ekleme "
+              "sayildi, Spotify'a hicbir sey yazilmadi (kontrol et; dogruysa --rev-baseline)")
+        return stats
 
     sp_tracks = spc.get_tracks(sp, sp_playlist_id)
     sp_ids = {t["id"] for t in sp_tracks}
@@ -66,7 +77,7 @@ def reverse_playlist(am, sp, sp_playlist_id, am_playlist_id, name, dry_run=False
     ours = db.am_song_ids(am_playlist_id)
     isrcs = am.isrc_of([i["catalog_id"] for i in new if i.get("catalog_id")])
     top = _float_to_top(sp_playlist_id, name)
-    add_ids = []
+    add_ids, add_rows = [], []
 
     for i in new:
         cid = i.get("catalog_id")
@@ -112,18 +123,23 @@ def reverse_playlist(am, sp, sp_playlist_id, am_playlist_id, name, dry_run=False
         if sid in sp_ids or sid in add_ids:
             continue
         add_ids.append(sid)
+        add_rows.append((sid, am_playlist_id, cid or "", i["title"], i["artist"], "apple"))
         print(f"  + Apple'dan: {i['artist']} - {i['title']}")
-        if not dry_run:
-            db.mark_am_synced([(sid, am_playlist_id, cid or "", i["title"], i["artist"], "apple")])
-            if cid and not db.get_am_link(sid):
-                db.set_am_link(sid, cid, "apple")
     if add_ids and not dry_run:
-        uris = [f"spotify:track:{x}" for x in add_ids]
-        if top:
-            # Apple sona ekler (en yeni sonda); Spotify'da en yeni en ustte olsun
-            sp.playlist_add_items(sp_playlist_id, uris[::-1], position=0)
-        else:
-            sp.playlist_add_items(sp_playlist_id, uris)
+        # Apple sona ekler (en yeni sonda); siralanan listede en yeni Spotify'da en ustte olsun.
+        # Kayit yalniz Spotify istegi basarili olunca yazilir.
+        rows = add_rows[::-1] if top else add_rows
+        for n in range(0, len(rows), SPOTIFY_ADD_BATCH):
+            chunk = rows[n:n + SPOTIFY_ADD_BATCH]
+            uris = [f"spotify:track:{r[0]}" for r in chunk]
+            if top:
+                sp.playlist_add_items(sp_playlist_id, uris, position=n)
+            else:
+                sp.playlist_add_items(sp_playlist_id, uris)
+            db.mark_am_synced(chunk)
+            for r in chunk:
+                if r[2] and not db.get_am_link(r[0]):
+                    db.set_am_link(r[0], r[2], "apple")
     stats["added"] = len(add_ids)
 
     # Silinenler: yalniz kaydet, Osman onaylarsa Spotify'dan silinir
@@ -154,12 +170,26 @@ def run(am, sp, targets, dry_run=False):
         am_pid = db.get_am_playlist(pl["id"])
         if not am_pid:
             continue
-        r = reverse_playlist(am, sp, pl["id"], am_pid, pl["name"], dry_run=dry_run)
+        try:
+            r = reverse_playlist(am, sp, pl["id"], am_pid, pl["name"], dry_run=dry_run)
+        except Exception as e:  # bir liste digerlerini ve ileri yonu durdurmasin
+            print(f"  ! '{pl['name']}' ters yon hatasi: {e}")
+            r = {"name": pl["name"], "added": 0, "pending": 0, "removed": 0,
+                 "baseline": False, "blocked": 0, "error": str(e)[:200]}
+        if r.get("blocked"):
+            print(f"[APPLE->SPOTIFY] '{pl['name']}': {r['blocked']} yeni oge durduruldu")
         if r["added"] or r["pending"] or r["removed"]:
             print(f"[APPLE->SPOTIFY] '{pl['name']}': +{r['added']} ?{r['pending']} "
                   f"-{r['removed']} (onay bekliyor)")
         results.append(r)
     return results
+
+
+def rebaseline(am, am_playlist_id):
+    """Osman: Apple listesinin bugunku hali dogru; anlik goruntuyu yenile, eklenenleri tasima."""
+    items = am.playlist_items(am_playlist_id)
+    db.set_rev_seen(am_playlist_id, items)
+    return len(items)
 
 
 def confirm_removal(sp, removed_id, keep=False):

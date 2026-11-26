@@ -118,6 +118,44 @@ class TestReverse(unittest.TestCase):
         self.assertEqual(r["removed"], 0)
         self.assertEqual(db.get_rev_removed(), [])
 
+    def test_mass_addition_is_blocked_and_keeps_snapshot(self):
+        self.run_once([item("i1", "c1", "Bir")])
+        for n in range(40):
+            db.set_am_link(f"s{n}x", f"c{n}x", "manual")
+        many = [item("i1", "c1", "Bir")] + [item(f"j{n}", f"c{n}x", f"T{n}") for n in range(40)]
+        r = self.run_once(many)
+        self.assertEqual((r["blocked"], r["added"], r["pending"]), (40, 0, 0))
+        self.sp.playlist_add_items.assert_not_called()
+        self.assertEqual(set(db.rev_seen("p.1")), {"i1"})
+        self.assertEqual(db.get_rev_pending(), [])
+
+    def test_adds_are_chunked_and_recorded_only_after_success(self):
+        am_reverse.MAX_ADDED_PER_LIST, saved = 1000, am_reverse.MAX_ADDED_PER_LIST
+        try:
+            self.run_once([item("i1", "c1", "Bir")])
+            for n in range(150):
+                db.set_am_link(f"s{n}x", f"c{n}x", "manual")
+            many = [item("i1", "c1", "Bir")] + [item(f"j{n}", f"c{n}x", f"T{n}")
+                                                 for n in range(150)]
+            self.sp.playlist_add_items.side_effect = [None, Exception("400")]
+            with self.assertRaises(Exception):
+                self.run_once(many)
+            calls = self.sp.playlist_add_items.call_args_list
+            self.assertEqual([len(c.args[1]) for c in calls], [100, 50])
+            # en yeni (sondaki) en ustte
+            self.assertEqual(calls[0].args[1][0], "spotify:track:s149x")
+            self.assertEqual(calls[1].kwargs, {"position": 100})
+            done = db.am_done_ids("p.1")
+            self.assertIn("s149x", done)
+            self.assertNotIn("s0x", done)   # basarisiz parca kaydedilmedi
+        finally:
+            am_reverse.MAX_ADDED_PER_LIST = saved
+
+    def test_one_list_error_does_not_stop_others(self):
+        self.am.playlist_items.side_effect = RuntimeError("boom")
+        out = am_reverse.run(self.am, self.sp, [{"id": "sp1", "name": "37"}])
+        self.assertIn("boom", out[0]["error"])
+
     def test_personal_list_appends_at_end(self):
         am_reverse.sort_playlists.read_sort_ids.return_value = set()
         self.run_once([item("i1", "c1", "Bir")])
